@@ -1,0 +1,20 @@
+{
+  "token": "your-discord-bot-token-or-set-the-DISCORD_TOKEN-environment-variable",
+  "guilds": {
+    "123456789012345678": {
+      "systems": {
+        "my-product": {
+          "credential": "slm_your_token_id_your_secret",
+          "system_id": "abcdefghijklmnopqrst"
+        }
+      },
+      "roles": {
+        "support": [111111111111111111],
+        "generate": [222222222222222222],
+        "manage": [333333333333333333]
+      },
+      "admins": [444444444444444444],
+      "log_channel": 555555555555555555
+    }
+  }
+}

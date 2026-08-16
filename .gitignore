@@ -1,0 +1,10 @@
+# Secrets and runtime state — never commit these.
+config.json
+logs/
+.env
+
+# Python build artifacts.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
