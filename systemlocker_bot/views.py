@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import discord
 
+from . import embeds
+
 
 class ConfirmView(discord.ui.View):
     """A Confirm/Cancel prompt only the invoking user may answer.
@@ -37,3 +39,20 @@ class ConfirmView(discord.ui.View):
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self._finish(interaction, False)
+
+
+async def confirm(interaction: discord.Interaction, prompt: discord.Embed) -> bool:
+    """Send a confirmation prompt; True only on explicit confirmation.
+
+    The interaction must already be deferred; the prompt is sent as an
+    ephemeral followup on behalf of the invoking user.
+    """
+    view = ConfirmView(interaction.user.id)
+    message = await interaction.followup.send(embed=prompt, view=view, ephemeral=True)
+    timed_out = await view.wait()
+    if timed_out or view.result is not True:
+        outcome = "Timed out — nothing was changed." if timed_out else "Cancelled — nothing was changed."
+        await message.edit(embed=embeds.error(outcome, title="Not confirmed"), view=None)
+        return False
+    await message.edit(view=None)
+    return True

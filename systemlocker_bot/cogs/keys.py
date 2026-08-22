@@ -11,7 +11,7 @@ from discord.ext import commands
 from .. import embeds, format as fmt, guards, permissions
 from ..api import AfterRedemption, ExpiresAt, Expiry, Perpetual
 from ..autocomplete import system_autocomplete
-from ..views import ConfirmView
+from ..views import confirm
 
 _LIFETIME = "lifetime"
 _AFTER_REDEMPTION = "after_redemption"
@@ -193,7 +193,7 @@ class KeysCog(commands.Cog):
             f"This clears the claimed hardware ID of **every** key in **{system}**. "
             "Every user will be able to claim their key on a new machine."
         )
-        if not await self._confirm(interaction, prompt):
+        if not await confirm(interaction, prompt):
             return
         updated = await api.reset_all_hwids()
         embed = embeds.hwids_reset(system, updated)
@@ -244,7 +244,7 @@ class KeysCog(commands.Cog):
             f"`{fmt.shorten(license_key, 64)}` will be **permanently deleted**. "
             "This cannot be undone."
         )
-        if not await self._confirm(interaction, prompt):
+        if not await confirm(interaction, prompt):
             return
         await api.delete_key(license_key)
         embed = embeds.key_deleted(system, license_key)
@@ -267,21 +267,6 @@ class KeysCog(commands.Cog):
         await interaction.followup.send(
             embed=embeds.key_logs(system, license_key, entries), ephemeral=True
         )
-
-    # -------------------------------------------------------------- internals
-
-    @staticmethod
-    async def _confirm(interaction: discord.Interaction, prompt: discord.Embed) -> bool:
-        """Send a confirmation prompt; True only on explicit confirmation."""
-        view = ConfirmView(interaction.user.id)
-        message = await interaction.followup.send(embed=prompt, view=view, ephemeral=True)
-        timed_out = await view.wait()
-        if timed_out or view.result is not True:
-            outcome = "Timed out — nothing was changed." if timed_out else "Cancelled — nothing was changed."
-            await message.edit(embed=embeds.error(outcome, title="Not confirmed"), view=None)
-            return False
-        await message.edit(view=None)
-        return True
 
 
 async def setup(bot) -> None:  # noqa: ANN001 - discord.py extension protocol

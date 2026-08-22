@@ -2,7 +2,8 @@
 
 Official self-hosted Discord bot for the **System Locker Management API v2**.
 Generate and manage license keys, read system statistics, manage server-side
-variables, and run Aegis IP lookups — from slash commands in your own server.
+variables and resellers, and run Aegis IP lookups — from slash commands in
+your own server.
 
 The bot is a server-side tool: it holds a management credential and speaks
 only to `https://systemlocker.net`. It is intended for the staff of one
@@ -32,16 +33,17 @@ system, and create a Management API v2 credential. Its complete value
 
 Pick the **least scopes the bot needs** for the commands you plan to use:
 
-| Scope            | Used by                                                   |
-| ---------------- | --------------------------------------------------------- |
-| `systems.read`   | `/system`, `/stats`                                       |
-| `systems.update` | `/pause`, `/resume`                                       |
-| `keys.create`    | `/gen`                                                    |
-| `keys.read`      | `/key`                                                    |
-| `keys.update`    | `/freeze`, `/unfreeze`, `/reset`, `/resetall`, `/addtime` |
-| `keys.delete`    | `/deletekey`                                              |
-| `variables.*`    | `/variable …`                                             |
-| `security.read`  | `/keylogs`, `/iplookup`                                   |
+| Scope            | Used by                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| `systems.read`   | `/system`, `/stats`                                           |
+| `systems.update` | `/pause`, `/resume`                                           |
+| `keys.create`    | `/gen`                                                        |
+| `keys.read`      | `/key`                                                        |
+| `keys.update`    | `/freeze`, `/unfreeze`, `/reset`, `/resetall`, `/addtime`     |
+| `keys.delete`    | `/deletekey`                                                  |
+| `variables.*`    | `/variable …`                                                 |
+| `resellers.*`    | `/reseller …` (removing an allowance uses `resellers.delete`) |
+| `security.read`  | `/keylogs`, `/iplookup`                                       |
 
 `systems.delete` is never used by this bot — leave it out.
 
@@ -79,17 +81,17 @@ The configuration file maps Discord servers to systems and roles. Structure:
 }
 ```
 
-| Key                         | Required | Meaning                                                                                                                   |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `guilds.<id>`               | yes      | One entry per Discord server. Anything else gets "not configured".                                                        |
-| `systems.<name>`            | yes      | A friendly name (used in commands) mapped to a credential and system ID.                                                  |
-| `systems.<name>.credential` | yes      | The Management API v2 credential bound to that system.                                                                    |
-| `systems.<name>.system_id`  | yes      | The 20-character system ID from the developer portal.                                                                     |
-| `roles.support`             | no       | Role IDs allowed to inspect keys, read stats, reset a HWID, freeze/unfreeze.                                              |
-| `roles.generate`            | no       | Role IDs additionally allowed to generate keys.                                                                           |
-| `roles.manage`              | no       | Role IDs additionally allowed to delete keys, add time, reset all HWIDs, pause/resume, manage variables, and run lookups. |
-| `admins`                    | no       | User IDs with full access regardless of roles.                                                                            |
-| `log_channel`               | no       | A channel that receives an embed for every mutation (key generation, deletion, pauses, variable changes).                 |
+| Key                         | Required | Meaning                                                                                                                                 |
+| --------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `guilds.<id>`               | yes      | One entry per Discord server. Anything else gets "not configured".                                                                      |
+| `systems.<name>`            | yes      | A friendly name (used in commands) mapped to a credential and system ID.                                                                |
+| `systems.<name>.credential` | yes      | The Management API v2 credential bound to that system.                                                                                  |
+| `systems.<name>.system_id`  | yes      | The 20-character system ID from the developer portal.                                                                                   |
+| `roles.support`             | no       | Role IDs allowed to inspect keys, read stats, reset a HWID, freeze/unfreeze.                                                            |
+| `roles.generate`            | no       | Role IDs additionally allowed to generate keys.                                                                                         |
+| `roles.manage`              | no       | Role IDs additionally allowed to delete keys, add time, reset all HWIDs, pause/resume, manage variables and resellers, and run lookups. |
+| `admins`                    | no       | User IDs with full access regardless of roles.                                                                                          |
+| `log_channel`               | no       | A channel that receives an embed for every mutation (key generation, deletion, pauses, variable changes).                               |
 
 Enable **Developer Mode** in Discord (User Settings → Advanced) to copy IDs
 via right-click. Tiers are cumulative — `generate` includes everything
@@ -102,24 +104,31 @@ voluntarily respects the API's rate limit of 10 requests per 5 seconds.
 
 ## Commands
 
-| Command                                                                     | Tier     | Description                                                   |
-| --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
-| `/key system license_key`                                                   | support  | Full details: redemption, claim, HWID, frozen, expiry, notes  |
-| `/keylogs system license_key`                                               | support  | The latest five authentication attempts for a key             |
-| `/system system`                                                            | support  | Version, program hash, pause state                            |
-| `/stats system`                                                             | support  | Online and total user counts with computed-at times           |
-| `/systems`                                                                  | support  | Systems configured for this server                            |
-| `/reset system license_key`                                                 | support  | Reset the HWID claimed by a key                               |
-| `/freeze` / `/unfreeze system license_key`                                  | support  | Freeze or unfreeze a key                                      |
-| `/gen system [count] [expiry] [duration] [expires_at] [notes] [free_trial]` | generate | Create 1–100 keys                                             |
-| `/addtime system license_key duration`                                      | manage   | Add time to a key's expiry                                    |
-| `/deletekey system license_key`                                             | manage   | Permanently delete a key (confirmation prompt)                |
-| `/resetall system`                                                          | manage   | Reset every HWID in the system (confirmation prompt)          |
-| `/pause system`                                                             | manage   | Pause authentication and end sessions (confirmation prompt)   |
-| `/resume system [compensate]`                                               | manage   | Resume; optionally extend key expiries by the paused duration |
-| `/variable get/create/update/delete`                                        | manage   | Manage server-side variables                                  |
-| `/iplookup system ip`                                                       | manage   | Aegis manual IP lookup (requires an Aegis plan)               |
-| `/help`                                                                     | —        | Command and tier overview                                     |
+| Command                                                                     | Tier     | Description                                                           |
+| --------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| `/key system license_key`                                                   | support  | Full details: redemption, claim, HWID, frozen, expiry, notes          |
+| `/keylogs system license_key`                                               | support  | The latest five authentication attempts for a key                     |
+| `/system system`                                                            | support  | Version, program hash, pause state                                    |
+| `/stats system`                                                             | support  | Online and total user counts with computed-at times                   |
+| `/systems`                                                                  | support  | Systems configured for this server                                    |
+| `/reset system license_key`                                                 | support  | Reset the HWID claimed by a key                                       |
+| `/freeze` / `/unfreeze system license_key`                                  | support  | Freeze or unfreeze a key                                              |
+| `/gen system [count] [expiry] [duration] [expires_at] [notes] [free_trial]` | generate | Create 1–100 keys                                                     |
+| `/addtime system license_key duration`                                      | manage   | Add time to a key's expiry                                            |
+| `/deletekey system license_key`                                             | manage   | Permanently delete a key (confirmation prompt)                        |
+| `/resetall system`                                                          | manage   | Reset every HWID in the system (confirmation prompt)                  |
+| `/pause system`                                                             | manage   | Pause authentication and end sessions (confirmation prompt)           |
+| `/resume system [compensate]`                                               | manage   | Resume; optionally extend key expiries by the paused duration         |
+| `/variable get/create/update/delete`                                        | manage   | Manage server-side variables                                          |
+| `/reseller list system` / `/reseller show system token`                     | manage   | List resellers or show one reseller's permissions and allowance       |
+| `/reseller create system name …`                                            | manage   | Create a reseller with permissions and an optional allowance          |
+| `/reseller permissions system token [flags]`                                | manage   | Replace permissions; omitted flags keep their current value           |
+| `/reseller allowance system token type [limits]`                            | manage   | Replace (or disable) a reseller's allowance                           |
+| `/reseller allowance-remove system token`                                   | manage   | Remove a reseller's allowance                                         |
+| `/reseller reset-password system token`                                     | manage   | Generate a new reseller password (shown once)                         |
+| `/reseller delete system token`                                             | manage   | Permanently delete a reseller and its allowance (confirmation prompt) |
+| `/iplookup system ip`                                                       | manage   | Aegis manual IP lookup (requires an Aegis plan)                       |
+| `/help`                                                                     | —        | Command and tier overview                                             |
 
 All responses are ephemeral — only the invoking staff member sees them.
 `/gen` shows the first ten keys in the response and attaches a text file
@@ -132,6 +141,30 @@ when more are created.
 Bare numbers are rejected so a typo can never quietly mean seconds.
 Fixed expiry dates use `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` (UTC), for
 example `2026-09-01` or `2026-09-01 14:30`.
+
+### Resellers
+
+Reseller management requires an active qualifying reseller plan on the
+developer account; otherwise these commands fail with a plan error from
+the API.
+
+A reseller is created with a name (up to 80 characters), five permission
+flags (create, ban, freeze, reset HWID, access all keys), and an optional
+allowance. An allowance is either an **overall** total key limit or
+**duration** limits per day / week / month / 3 months / year / lifetime —
+all six are required for the duration type, and every limit is an integer
+from 0 to 4,294,967,295.
+
+`/reseller permissions` replaces the complete permissions object; flags
+you leave blank keep their current value instead of silently becoming
+`no`.
+
+The reseller **password** is returned only by `/reseller create` and
+`/reseller reset-password`, and only in the ephemeral reply to the
+invoking staff member — it is never mirrored to the log channel and
+cannot be retrieved again later. Reseller tokens are visible to anyone
+with the manage tier and appear in the audit log; treat them as
+sensitive. Be careful about where you run these commands.
 
 ## Logs
 
@@ -153,16 +186,17 @@ may have been exposed.
 The earlier community bot targeted the legacy v1 API, which is being
 retired. This bot covers the same workflow with v2:
 
-| Community bot (v1)            | This bot                                        |
-| ----------------------------- | ----------------------------------------------- |
-| `/gen … expire=0–4`           | `/gen` with expiry presets, durations, or dates |
-| `/checkkey`, `/expiration`    | `/key` (full details including expiry)          |
-| `/users`                      | `/stats` (online + total, computed-at times)    |
-| `/reset`, `/resetall`         | `/reset`, `/resetall`                           |
-| `/deletekey`                  | `/deletekey` (now with confirmation)            |
-| `/adjustexpiry`               | `/addtime` (v2 adds time instead of setting it) |
-| local SQLite expiry tracker   | not needed — v2 reports expiry per key          |
-| reseller and raw-API commands | no v2 equivalent; removed                       |
+| Community bot (v1)                               | This bot                                            |
+| ------------------------------------------------ | --------------------------------------------------- |
+| `/gen … expire=0–4`                              | `/gen` with expiry presets, durations, or dates     |
+| `/checkkey`, `/expiration`                       | `/key` (full details including expiry)              |
+| `/users`                                         | `/stats` (online + total, computed-at times)        |
+| `/reset`, `/resetall`                            | `/reset`, `/resetall`                               |
+| `/deletekey`                                     | `/deletekey` (now with confirmation)                |
+| `/adjustexpiry`                                  | `/addtime` (v2 adds time instead of setting it)     |
+| local SQLite expiry tracker                      | not needed — v2 reports expiry per key              |
+| `/newreseller`, `/listresellers`, `/banreseller` | `/reseller …` (v2 reseller management)              |
+| raw-API commands                                 | no equivalent — the bot exposes only typed commands |
 
 ## License
 

@@ -21,6 +21,7 @@ EXTENSIONS = (
     "systemlocker_bot.cogs.keys",
     "systemlocker_bot.cogs.systems",
     "systemlocker_bot.cogs.variables",
+    "systemlocker_bot.cogs.resellers",
     "systemlocker_bot.cogs.security",
     "systemlocker_bot.cogs.meta",
 )

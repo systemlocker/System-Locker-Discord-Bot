@@ -6,11 +6,16 @@ import discord
 
 from . import format as fmt
 from .api import (
+    ALLOWANCE_OVERALL,
+    Allowance,
     IpLookup,
     KeyDetails,
     KeyLogEntry,
     ManagementApiError,
     PauseResult,
+    Reseller,
+    ResellerPermissions,
+    ResellerSummary,
     SystemDetails,
     SystemStatistics,
     Variable,
@@ -240,6 +245,137 @@ def variable(system_name: str, item: Variable) -> discord.Embed:
 def variable_deleted(system_name: str, name: str) -> discord.Embed:
     embed = base("🔧 Variable deleted", discord.Color.red(), system_name)
     embed.description = f"`{name}` was deleted."
+    return embed
+
+
+# ------------------------------------------------------------------- resellers
+
+_RESELLER_COLOR = discord.Color.dark_teal()
+
+_PERMISSION_LABELS = (
+    ("Create keys", "can_create_keys"),
+    ("Ban keys", "can_ban_keys"),
+    ("Freeze keys", "can_freeze_keys"),
+    ("Reset HWID", "can_reset_hwid"),
+    ("Access all keys", "can_access_all_keys"),
+)
+
+_DURATION_LIMIT_LABELS = (
+    ("Day", "day_key_limit"),
+    ("Week", "week_key_limit"),
+    ("Month", "month_key_limit"),
+    ("3 months", "month_three_key_limit"),
+    ("Year", "year_key_limit"),
+    ("Lifetime", "lifetime_key_limit"),
+)
+
+
+def _permissions_field(permissions: ResellerPermissions) -> str:
+    return "\n".join(
+        f"{_CHECK_CROSS[getattr(permissions, attr)]} {label}" for label, attr in _PERMISSION_LABELS
+    )
+
+
+def _allowance_field(allowance: Allowance | None) -> str:
+    if allowance is None:
+        return "No allowance is configured."
+    if not allowance.enabled:
+        return "Disabled."
+    if allowance.type == ALLOWANCE_OVERALL:
+        return f"Overall key limit: **{allowance.overall_key_limit}**"
+    lines = ["Limits per period:"]
+    lines += [
+        f"{label}: **{getattr(allowance, attr)}**" for label, attr in _DURATION_LIMIT_LABELS
+    ]
+    return "\n".join(lines)
+
+
+def reseller_list(system_name: str, summaries: list[ResellerSummary]) -> discord.Embed:
+    embed = base("🤝 Resellers", _RESELLER_COLOR, system_name)
+    if not summaries:
+        embed.description = "No resellers are configured for this system."
+        return embed
+    lines = [f"`{fmt.shorten(item.token, 64)}` — {item.name}" for item in summaries[:15]]
+    if len(summaries) > 15:
+        lines.append(f"… and {len(summaries) - 15} more")
+    embed.description = "\n".join(lines)
+    return embed
+
+
+def reseller_details(system_name: str, reseller: Reseller) -> discord.Embed:
+    embed = base("🤝 Reseller details", _RESELLER_COLOR, system_name)
+    embed.add_field(name="Name", value=fmt.shorten(reseller.name, 200) or "—", inline=True)
+    embed.add_field(name="Token", value=f"`{fmt.shorten(reseller.token, 64)}`", inline=True)
+    embed.add_field(name="Permissions", value=_permissions_field(reseller.permissions), inline=False)
+    embed.add_field(
+        name="Allowance",
+        value=_allowance_field(reseller.allowance),
+        inline=False,
+    )
+    return embed
+
+
+def reseller_created(
+    system_name: str, reseller: Reseller, *, password: str | None = None
+) -> discord.Embed:
+    embed = base("🤝 Reseller created", discord.Color.green(), system_name)
+    if password is not None:
+        embed.description = (
+            "The reseller's password is shown **only here** — copy it now; it "
+            "cannot be retrieved later and is not mirrored to the log channel."
+        )
+    embed.add_field(name="Name", value=fmt.shorten(reseller.name, 200) or "—", inline=True)
+    embed.add_field(name="Token", value=f"`{fmt.shorten(reseller.token, 64)}`", inline=True)
+    if password is not None:
+        embed.add_field(name="Password", value=f"`{password}`", inline=True)
+    embed.add_field(name="Permissions", value=_permissions_field(reseller.permissions), inline=False)
+    embed.add_field(name="Allowance", value=_allowance_field(reseller.allowance), inline=False)
+    return embed
+
+
+def reseller_permissions(
+    system_name: str, token: str, permissions: ResellerPermissions
+) -> discord.Embed:
+    embed = base("🛠️ Reseller permissions", _RESELLER_COLOR, system_name)
+    embed.add_field(name="Token", value=f"`{fmt.shorten(token, 64)}`", inline=False)
+    embed.add_field(name="Permissions", value=_permissions_field(permissions), inline=False)
+    return embed
+
+
+def reseller_allowance(system_name: str, token: str, allowance: Allowance | None) -> discord.Embed:
+    embed = base("🧮 Reseller allowance", _RESELLER_COLOR, system_name)
+    embed.add_field(name="Token", value=f"`{fmt.shorten(token, 64)}`", inline=False)
+    embed.add_field(name="Allowance", value=_allowance_field(allowance), inline=False)
+    return embed
+
+
+def reseller_allowance_removed(system_name: str, token: str) -> discord.Embed:
+    embed = base("🧮 Allowance removed", discord.Color.red(), system_name)
+    embed.description = f"The allowance for `{fmt.shorten(token, 64)}` was removed."
+    return embed
+
+
+def reseller_password_reset(
+    system_name: str, token: str, *, password: str | None = None
+) -> discord.Embed:
+    embed = base("🔁 Reseller password reset", discord.Color.green(), system_name)
+    if password is not None:
+        embed.description = (
+            "The new password is shown **only here** — copy it now; it cannot "
+            "be retrieved later and is not mirrored to the log channel."
+        )
+        embed.add_field(name="Token", value=f"`{fmt.shorten(token, 64)}`", inline=True)
+        embed.add_field(name="New password", value=f"`{password}`", inline=True)
+    else:
+        embed.description = f"A new password was generated for `{fmt.shorten(token, 64)}`."
+    return embed
+
+
+def reseller_deleted(system_name: str, token: str) -> discord.Embed:
+    embed = base("🤝 Reseller deleted", discord.Color.red(), system_name)
+    embed.description = (
+        f"Reseller `{fmt.shorten(token, 64)}` and its allowance were permanently deleted."
+    )
     return embed
 
 

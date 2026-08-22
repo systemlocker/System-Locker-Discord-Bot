@@ -29,6 +29,11 @@ _COMMANDS = {
         ("/pause system", "Pause authentication (asks to confirm)"),
         ("/resume system [compensate]", "Resume a paused system"),
         ("/variable get|create|update|delete", "Manage server-side variables"),
+        ("/reseller list|show system", "List resellers or show one reseller"),
+        (
+            "/reseller create|permissions|allowance|reset-password|delete",
+            "Create resellers, manage permissions and allowances",
+        ),
         ("/iplookup system ip", "Aegis IP lookup"),
     ),
 }

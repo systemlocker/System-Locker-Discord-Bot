@@ -126,6 +126,133 @@ class Variable:
     protected: bool
 
 
+ALLOWANCE_OVERALL = "overall"
+ALLOWANCE_DURATION = "duration"
+
+KEY_LIMIT_MIN = 0
+KEY_LIMIT_MAX = 4_294_967_295
+
+_DURATION_LIMIT_FIELDS = (
+    "day_key_limit",
+    "week_key_limit",
+    "month_key_limit",
+    "month_three_key_limit",
+    "year_key_limit",
+    "lifetime_key_limit",
+)
+
+RESELLER_NAME_MAX = 80
+
+
+@dataclass
+class ResellerPermissions:
+    """The five reseller capability flags, always sent as one complete object."""
+
+    can_create_keys: bool = False
+    can_ban_keys: bool = False
+    can_freeze_keys: bool = False
+    can_reset_hwid: bool = False
+    can_access_all_keys: bool = False
+
+    def to_body(self) -> dict[str, bool]:
+        return {
+            "can_create_keys": self.can_create_keys,
+            "can_ban_keys": self.can_ban_keys,
+            "can_freeze_keys": self.can_freeze_keys,
+            "can_reset_hwid": self.can_reset_hwid,
+            "can_access_all_keys": self.can_access_all_keys,
+        }
+
+    @classmethod
+    def from_body(cls, data: Mapping[str, Any]) -> "ResellerPermissions":
+        return cls(
+            can_create_keys=bool(data.get("can_create_keys")),
+            can_ban_keys=bool(data.get("can_ban_keys")),
+            can_freeze_keys=bool(data.get("can_freeze_keys")),
+            can_reset_hwid=bool(data.get("can_reset_hwid")),
+            can_access_all_keys=bool(data.get("can_access_all_keys")),
+        )
+
+
+@dataclass
+class Allowance:
+    """A reseller's key allowance; ``enabled=False`` means none is configured.
+
+    When enabled, ``type`` is ``overall`` with ``overall_key_limit``, or
+    ``duration`` with all six duration limits. Completeness and type are
+    validated when the outgoing body is built, so partially-filled objects
+    returned by the API still parse.
+    """
+
+    enabled: bool
+    type: str | None = None
+    overall_key_limit: int | None = None
+    day_key_limit: int | None = None
+    week_key_limit: int | None = None
+    month_key_limit: int | None = None
+    month_three_key_limit: int | None = None
+    year_key_limit: int | None = None
+    lifetime_key_limit: int | None = None
+
+    def __post_init__(self) -> None:
+        for field in ("overall_key_limit",) + _DURATION_LIMIT_FIELDS:
+            value = getattr(self, field)
+            if value is not None and not KEY_LIMIT_MIN <= value <= KEY_LIMIT_MAX:
+                raise ValueError(f"{field} must be between {KEY_LIMIT_MIN} and {KEY_LIMIT_MAX}.")
+
+    def to_body(self) -> dict[str, Any]:
+        if not self.enabled:
+            return {"enabled": False}
+        if self.type == ALLOWANCE_OVERALL:
+            if self.overall_key_limit is None:
+                raise ValueError("an overall allowance needs overall_key_limit.")
+            return {
+                "enabled": True,
+                "type": self.type,
+                "overall_key_limit": self.overall_key_limit,
+            }
+        if self.type == ALLOWANCE_DURATION:
+            missing = [field for field in _DURATION_LIMIT_FIELDS if getattr(self, field) is None]
+            if missing:
+                raise ValueError(
+                    "a duration allowance needs all six limits: " + ", ".join(missing) + "."
+                )
+            body: dict[str, Any] = {"enabled": True, "type": self.type}
+            for field in _DURATION_LIMIT_FIELDS:
+                body[field] = getattr(self, field)
+            return body
+        raise ValueError("allowance type must be 'overall' or 'duration'.")
+
+    @classmethod
+    def from_body(cls, data: Mapping[str, Any]) -> "Allowance":
+        return cls(
+            enabled=bool(data.get("enabled", data.get("type") is not None)),
+            type=data.get("type"),
+            overall_key_limit=_optional_int(data.get("overall_key_limit")),
+            day_key_limit=_optional_int(data.get("day_key_limit")),
+            week_key_limit=_optional_int(data.get("week_key_limit")),
+            month_key_limit=_optional_int(data.get("month_key_limit")),
+            month_three_key_limit=_optional_int(data.get("month_three_key_limit")),
+            year_key_limit=_optional_int(data.get("year_key_limit")),
+            lifetime_key_limit=_optional_int(data.get("lifetime_key_limit")),
+        )
+
+
+@dataclass(frozen=True)
+class ResellerSummary:
+    token: str
+    name: str
+
+
+@dataclass(frozen=True)
+class Reseller:
+    token: str
+    name: str
+    permissions: ResellerPermissions
+    allowance: Allowance | None
+    password: str | None = None  # only ever present in create / password-reset replies
+
+
 @dataclass(frozen=True)
 class IpLookup:
     ip: str
@@ -405,6 +532,70 @@ class ManagementApi:
     async def delete_variable(self, name: str) -> None:
         await self._request("DELETE", self._variable_path(name))
 
+    # ---------------------------------------------------------------- resellers
+
+    async def list_resellers(self) -> list[ResellerSummary]:
+        data = await self._request("GET", f"{self._system_path()}/resellers")
+        return [
+            ResellerSummary(token=str(item.get("token") or ""), name=str(item.get("name") or ""))
+            for item in _as_list(data)
+        ]
+
+    async def get_reseller(self, token: str) -> Reseller:
+        return self._reseller(await self._request("GET", self._reseller_path(token)))
+
+    async def create_reseller(
+        self,
+        name: str,
+        *,
+        permissions: ResellerPermissions,
+        allowance: Allowance | None = None,
+    ) -> Reseller:
+        cleaned = name.strip()
+        if not cleaned or len(cleaned) > RESELLER_NAME_MAX:
+            raise ValueError(
+                f"the reseller name must be 1-{RESELLER_NAME_MAX} characters after trimming."
+            )
+        body: dict[str, Any] = {"name": cleaned, "permissions": permissions.to_body()}
+        body.update((allowance or Allowance(enabled=False)).to_body())
+        return self._reseller(
+            await self._request("POST", f"{self._system_path()}/resellers", json_body=body)
+        )
+
+    async def get_reseller_permissions(self, token: str) -> ResellerPermissions:
+        return self._permissions(await self._request("GET", f"{self._reseller_path(token)}/permissions"))
+
+    async def set_reseller_permissions(
+        self, token: str, permissions: ResellerPermissions
+    ) -> ResellerPermissions:
+        data = await self._request(
+            "PATCH",
+            f"{self._reseller_path(token)}/permissions",
+            json_body={"permissions": permissions.to_body()},
+        )
+        return self._permissions(data)
+
+    async def get_reseller_allowance(self, token: str) -> Allowance | None:
+        return self._allowance(await self._request("GET", f"{self._reseller_path(token)}/allowance"))
+
+    async def set_reseller_allowance(self, token: str, allowance: Allowance) -> Allowance | None:
+        data = await self._request(
+            "PUT", f"{self._reseller_path(token)}/allowance", json_body=allowance.to_body()
+        )
+        return self._allowance(data)
+
+    async def remove_reseller_allowance(self, token: str) -> None:
+        await self._request("DELETE", f"{self._reseller_path(token)}/allowance")
+
+    async def reset_reseller_password(self, token: str) -> str:
+        data = await self._request("POST", f"{self._reseller_path(token)}/password-reset")
+        if isinstance(data, Mapping):
+            return str(data.get("password") or "")
+        return str(data or "")
+
+    async def delete_reseller(self, token: str) -> None:
+        await self._request("DELETE", self._reseller_path(token))
+
     # ----------------------------------------------------------------- security
 
     async def ip_lookup(self, ip: str) -> IpLookup:
@@ -429,6 +620,9 @@ class ManagementApi:
 
     def _variable_path(self, name: str) -> str:
         return f"{self._system_path()}/variables/{quote(name.strip(), safe='')}"
+
+    def _reseller_path(self, token: str) -> str:
+        return f"{self._system_path()}/resellers/{quote(token.strip(), safe='')}"
 
     async def _request(
         self,
@@ -513,6 +707,29 @@ class ManagementApi:
             protected=bool(data.get("protected")),
         )
 
+    def _reseller(self, data: Mapping[str, Any]) -> Reseller:
+        return Reseller(
+            token=str(data.get("token") or ""),
+            name=str(data.get("name") or ""),
+            permissions=self._permissions(data),
+            allowance=self._allowance(data.get("allowances")),
+            password=data.get("password"),
+        )
+
+    @staticmethod
+    def _permissions(data: Any) -> ResellerPermissions:
+        # The permissions endpoint returns the bare object; a full reseller
+        # response nests it under "permissions".
+        if isinstance(data, Mapping) and isinstance(data.get("permissions"), Mapping):
+            data = data["permissions"]
+        return ResellerPermissions.from_body(data if isinstance(data, Mapping) else {})
+
+    @staticmethod
+    def _allowance(data: Any) -> Allowance | None:
+        if not isinstance(data, Mapping) or not data:
+            return None
+        return Allowance.from_body(data)
+
 
 def _api_error(status: int, body: Any) -> ManagementApiError:
     error = body.get("error") if isinstance(body, dict) else None
@@ -539,3 +756,12 @@ def _as_list(data: Any) -> list[Any]:
     if isinstance(data, dict):
         return [data]
     return []
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

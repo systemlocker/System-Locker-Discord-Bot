@@ -33,8 +33,9 @@ paste them into chat, never embed them in copies of this bot you distribute.
   without `systems.delete` cannot be talked into it.
 - It offers no raw "run any API call" passthrough; only the documented
   commands exist.
-- Destructive actions (`/deletekey`, `/resetall`, `/pause`) require an
-  explicit confirmation click from the invoking staff member.
+- Destructive actions (`/deletekey`, `/resetall`, `/pause`,
+  `/reseller delete`) require an explicit confirmation click from the
+  invoking staff member.
 
 ## Access control
 
@@ -51,6 +52,11 @@ Autocomplete and error messages reveal only the system names you configured.
   are used. Restrict host access accordingly.
 - The configured `log_channel` receives key-generation and other mutation
   embeds. Make it staff-only.
+- Reseller passwords are shown **only** in the ephemeral reply to
+  `/reseller create` and `/reseller reset-password`; they are never
+  mirrored to the log channel and cannot be fetched again. Reseller
+  tokens do appear in embeds and the audit log — treat them as sensitive
+  and revoke (delete) a reseller if its token may have been exposed.
 - `/keylogs` shows IP addresses only to the extent the developer's logging
   level permits, and `/iplookup` requires the Aegis plan.
 
