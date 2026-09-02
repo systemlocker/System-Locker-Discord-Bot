@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from . import format as fmt
+
 DEFAULT_CONFIG_PATH = "config.json"
 TOKEN_ENV_VARIABLE = "DISCORD_TOKEN"
 
@@ -36,6 +38,19 @@ class SystemEntry:
 
 
 @dataclass(frozen=True)
+class IndividualFreeTrialConfig:
+    """Opt-in public issuance settings for one system in a Discord guild."""
+
+    system_name: str
+    mode: str  # ``command`` or ``reaction``
+    duration_seconds: int
+    channel_id: int | None = None
+    emoji: str | None = None
+    notes: str | None = None
+    enable: bool = False
+
+
+@dataclass(frozen=True)
 class GuildConfig:
     """Per-guild settings: systems, role tiers, admin overrides, log channel."""
 
@@ -44,6 +59,7 @@ class GuildConfig:
     tier_roles: Mapping[int, frozenset[int]]  # tier level -> role IDs
     admins: frozenset[int]
     log_channel: int | None
+    individual_free_trial: IndividualFreeTrialConfig | None = None
 
     def system(self, name: str) -> SystemEntry | None:
         return self.systems.get(name.strip().lower())
@@ -91,7 +107,11 @@ def load_config(path: str | None = None) -> BotConfig:
 
 
 def _load_guild(guild_id: int, raw: Mapping[str, Any], label: str) -> GuildConfig:
-    _reject_unknown_keys(raw, {"systems", "roles", "admins", "log_channel"}, label)
+    _reject_unknown_keys(
+        raw,
+        {"systems", "roles", "admins", "log_channel", "individual_free_trial"},
+        label,
+    )
 
     systems_raw = raw.get("systems")
     if not isinstance(systems_raw, dict) or not systems_raw:
@@ -141,12 +161,82 @@ def _load_guild(guild_id: int, raw: Mapping[str, Any], label: str) -> GuildConfi
     if log_channel_raw is not None:
         log_channel = _snowflake(log_channel_raw, f"{label}: log_channel")
 
+    trial_raw = raw.get("individual_free_trial")
+    trial = None
+    if trial_raw is not None:
+        trial = _load_individual_free_trial(trial_raw, systems, label)
+
     return GuildConfig(
         guild_id=guild_id,
         systems=systems,
         tier_roles=tier_roles,
         admins=admins,
         log_channel=log_channel,
+        individual_free_trial=trial,
+    )
+
+
+def _load_individual_free_trial(
+    raw: Any, systems: Mapping[str, SystemEntry], guild_label: str
+) -> IndividualFreeTrialConfig:
+    """Validate the deliberately explicit opt-in public-trial configuration."""
+    label = f"{guild_label}: individual_free_trial"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{label} must be an object.")
+    _reject_unknown_keys(
+        raw, {"system", "mode", "duration", "channel", "emoji", "notes", "enable"}, label
+    )
+
+    enable = raw.get("enable", False)
+    if not isinstance(enable, bool):
+        raise ConfigError(f"{label}: 'enable' must be true or false.")
+
+    system_name = raw.get("system")
+    if not isinstance(system_name, str) or not system_name.strip():
+        raise ConfigError(f"{label}: 'system' must name a configured system.")
+    configured_system = systems.get(system_name.strip().lower())
+    if configured_system is None:
+        raise ConfigError(f"{label}: 'system' must name a configured system.")
+
+    mode = raw.get("mode")
+    if mode not in {"command", "reaction"}:
+        raise ConfigError(f"{label}: 'mode' must be 'command' or 'reaction'.")
+
+    duration = raw.get("duration")
+    if not isinstance(duration, str):
+        raise ConfigError(f"{label}: 'duration' must be a duration such as '7d'.")
+    try:
+        duration_seconds = fmt.parse_duration(duration)
+    except ValueError as error:
+        raise ConfigError(f"{label}: {error}") from None
+
+    notes = raw.get("notes")
+    if notes is not None and not isinstance(notes, str):
+        raise ConfigError(f"{label}: 'notes' must be a string when provided.")
+    if isinstance(notes, str) and len(notes) > 256:
+        raise ConfigError(f"{label}: 'notes' cannot exceed 256 characters.")
+
+    channel_id = None
+    emoji = None
+    if mode == "reaction":
+        if "channel" not in raw:
+            raise ConfigError(f"{label}: reaction mode requires a 'channel' Discord ID.")
+        channel_id = _snowflake(raw["channel"], f"{label}: channel")
+        emoji_raw = raw.get("emoji", "🎉")
+        if not isinstance(emoji_raw, str) or not emoji_raw.strip() or len(emoji_raw) > 100:
+            raise ConfigError(f"{label}: 'emoji' must be a non-empty emoji string.")
+        emoji = emoji_raw.strip()
+    elif "channel" in raw or "emoji" in raw:
+        raise ConfigError(f"{label}: 'channel' and 'emoji' only apply to reaction mode.")
+
+    return IndividualFreeTrialConfig(
+        system_name=configured_system.name,
+        mode=mode,
+        duration_seconds=duration_seconds,
+        channel_id=channel_id,
+        emoji=emoji,
+        notes=notes.strip() if isinstance(notes, str) and notes.strip() else None,
+        enable=enable,
     )
 
 

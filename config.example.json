@@ -14,7 +14,16 @@
         "manage": [333333333333333333]
       },
       "admins": [444444444444444444],
-      "log_channel": 555555555555555555
+      "log_channel": 555555555555555555,
+      "individual_free_trial": {
+        "enable": false,
+        "system": "my-product",
+        "mode": "reaction",
+        "channel": 666666666666666666,
+        "emoji": "🎉",
+        "duration": "7d",
+        "notes": "Discord community trial"
+      }
     }
   }
 }

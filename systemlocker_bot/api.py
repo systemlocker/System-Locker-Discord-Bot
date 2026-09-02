@@ -464,6 +464,42 @@ class ManagementApi:
         keys = _as_list(data.get("keys")) if isinstance(data, dict) else _as_list(data)
         return [str(key) for key in keys]
 
+    async def create_individual_free_trial(
+        self,
+        identifier: str,
+        *,
+        expiry: Expiry,
+        notes: str | None = None,
+    ) -> str:
+        """Create the one individual trial allowed for an external identifier."""
+        identifier = identifier.strip()
+        if not identifier:
+            raise ValueError("identifier must not be empty.")
+        if len(identifier) > 256:
+            raise ValueError("identifier cannot exceed 256 characters.")
+        body: dict[str, Any] = {"identifier": identifier, "expiry": expiry.to_body()}
+        if notes is not None:
+            body["notes"] = notes
+        data = await self._request(
+            "POST", f"{self._system_path()}/individual-free-trials", json_body=body
+        )
+        keys = _as_list(data.get("keys")) if isinstance(data, dict) else _as_list(data)
+        if len(keys) != 1:
+            raise ApiTransportError("The API did not return exactly one individual trial key.")
+        return str(keys[0])
+
+    async def individual_free_trial_identifier_available(self, identifier: str) -> bool:
+        """Return whether an identifier has not yet consumed its individual trial."""
+        identifier = identifier.strip()
+        if not identifier:
+            raise ValueError("identifier must not be empty.")
+        data = await self._request(
+            "GET",
+            f"{self._system_path()}/individual-free-trials/identifier-availability",
+            params={"identifier": identifier},
+        )
+        return bool(data.get("available")) if isinstance(data, Mapping) else False
+
     async def get_key(self, license_key: str) -> KeyDetails:
         return self._key_details(await self._request("GET", self._key_path(license_key)))
 

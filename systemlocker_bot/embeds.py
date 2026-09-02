@@ -197,6 +197,19 @@ def key_deleted(system_name: str, license_key: str) -> discord.Embed:
     return embed
 
 
+def individual_free_trial(system_name: str, license_key: str, duration_seconds: int) -> discord.Embed:
+    """The only response containing a public user's newly issued key."""
+    embed = base("🎁 Your free trial key", discord.Color.green(), system_name)
+    embed.description = "Keep this key private. It is linked to this Discord account."
+    embed.add_field(name="License key", value=f"`{license_key}`", inline=False)
+    embed.add_field(
+        name="Expires",
+        value=f"{fmt.format_duration(duration_seconds)} after first redemption",
+        inline=False,
+    )
+    return embed
+
+
 def hwids_reset(system_name: str, count: int) -> discord.Embed:
     embed = base("♻️ HWIDs reset", discord.Color.gold(), system_name)
     embed.description = f"Hardware IDs were cleared for **{count}** key(s)."

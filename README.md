@@ -38,6 +38,7 @@ Pick the **least scopes the bot needs** for the commands you plan to use:
 | `systems.read`   | `/system`, `/stats`                                           |
 | `systems.update` | `/pause`, `/resume`                                           |
 | `keys.create`    | `/gen`                                                        |
+| `individual_free_trial` | Public `/trial` and configured reaction-based individual trials |
 | `keys.read`      | `/key`                                                        |
 | `keys.update`    | `/freeze`, `/unfreeze`, `/reset`, `/resetall`, `/addtime`     |
 | `keys.delete`    | `/deletekey`                                                  |
@@ -92,6 +93,7 @@ The configuration file maps Discord servers to systems and roles. Structure:
 | `roles.manage`              | no       | Role IDs additionally allowed to delete keys, add time, reset all HWIDs, pause/resume, manage variables and resellers, and run lookups. |
 | `admins`                    | no       | User IDs with full access regardless of roles.                                                                                          |
 | `log_channel`               | no       | A channel that receives an embed for every mutation (key generation, deletion, pauses, variable changes).                               |
+| `individual_free_trial`     | no       | Configures public individual trials; its `enable` switch remains false until explicitly changed.                                    |
 
 Enable **Developer Mode** in Discord (User Settings → Advanced) to copy IDs
 via right-click. Tiers are cumulative — `generate` includes everything
@@ -101,6 +103,46 @@ via right-click. Tiers are cumulative — `generate` includes everything
 A credential is bound to exactly one system, so each configured system uses
 its own credential. The bot shares one API client per credential and
 voluntarily respects the API's rate limit of 10 requests per 5 seconds.
+
+### Individual free trials
+
+Individual free trials are **off unless** a guild has an
+`individual_free_trial` block with `"enable": true`. This extra switch
+defaults to `false`, so copying a configuration example cannot issue keys.
+They use the dedicated
+`individual_free_trial` credential scope (not `keys.create`) and always use
+the member's Discord ID as the trial identifier, so a member cannot request
+another key for that system.
+
+```json
+"individual_free_trial": {
+  "enable": true,
+  "system": "my-product",
+  "mode": "command",
+  "duration": "7d",
+  "notes": "Discord community trial"
+}
+```
+
+Change `"enable"` to `true` only when you are ready to issue keys. Use
+`"mode": "command"` to let members run `/trial`, or use
+`"mode": "reaction"` plus a `channel` ID to issue a key when a member adds
+the configured emoji (default: `🎉`) to any message in that channel:
+
+```json
+"individual_free_trial": {
+  "enable": true,
+  "system": "my-product",
+  "mode": "reaction",
+  "channel": 666666666666666666,
+  "emoji": "🎉",
+  "duration": "7d"
+}
+```
+
+`duration` is required and starts on first redemption. The key is sent only
+by DM and is never mirrored to the guild log channel. Members must permit
+DMs from the server before requesting a trial.
 
 ## Commands
 
@@ -114,6 +156,7 @@ voluntarily respects the API's rate limit of 10 requests per 5 seconds.
 | `/reset system license_key`                                                 | support  | Reset the HWID claimed by a key                                       |
 | `/freeze` / `/unfreeze system license_key`                                  | support  | Freeze or unfreeze a key                                              |
 | `/gen system [count] [expiry] [duration] [expires_at] [notes] [free_trial]` | generate | Create 1–100 keys                                                     |
+| `/trial`                                                                    | —        | Request an opted-in individual free-trial key by DM                  |
 | `/addtime system license_key duration`                                      | manage   | Add time to a key's expiry                                            |
 | `/deletekey system license_key`                                             | manage   | Permanently delete a key (confirmation prompt)                        |
 | `/resetall system`                                                          | manage   | Reset every HWID in the system (confirmation prompt)                  |
@@ -130,7 +173,9 @@ voluntarily respects the API's rate limit of 10 requests per 5 seconds.
 | `/iplookup system ip`                                                       | manage   | Aegis manual IP lookup (requires an Aegis plan)                       |
 | `/help`                                                                     | —        | Command and tier overview                                             |
 
-All responses are ephemeral — only the invoking staff member sees them.
+Staff-command responses are ephemeral — only the invoking staff member sees
+them. An individual trial key is instead delivered only by DM to the member
+who requested it.
 `/gen` shows the first ten keys in the response and attaches a text file
 when more are created.
 

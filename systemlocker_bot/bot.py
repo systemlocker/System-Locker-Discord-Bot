@@ -19,6 +19,7 @@ audit = logging.getLogger("systemlocker_bot.audit")
 
 EXTENSIONS = (
     "systemlocker_bot.cogs.keys",
+    "systemlocker_bot.cogs.individual_free_trials",
     "systemlocker_bot.cogs.systems",
     "systemlocker_bot.cogs.variables",
     "systemlocker_bot.cogs.resellers",
