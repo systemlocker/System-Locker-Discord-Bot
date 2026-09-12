@@ -154,7 +154,7 @@ DMs from the server before requesting a trial.
 | `/stats system`                                                             | support  | Online and total user counts with computed-at times                   |
 | `/systems`                                                                  | support  | Systems configured for this server                                    |
 | `/reset system license_key`                                                 | support  | Reset the HWID claimed by a key                                       |
-| `/freeze` / `/unfreeze system license_key`                                  | support  | Freeze or unfreeze a key                                              |
+| `/freeze system license_key [compensate]` / `/unfreeze system license_key`  | support  | Freeze or unfreeze a key; `compensate` returns the frozen time to the expiry when unfrozen |
 | `/gen system [count] [expiry] [duration] [expires_at] [notes] [free_trial]` | generate | Create 1–100 keys                                                     |
 | `/trial`                                                                    | —        | Request an opted-in individual free-trial key by DM                  |
 | `/addtime system license_key duration`                                      | manage   | Add time to a key's expiry                                            |

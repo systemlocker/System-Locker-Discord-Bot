@@ -135,8 +135,17 @@ class KeysCog(commands.Cog):
 
     @app_commands.command(name="freeze", description="Freeze a license key (blocks authentication)")
     @app_commands.autocomplete(system=system_autocomplete)
-    async def freeze(self, interaction: discord.Interaction, system: str, license_key: str) -> None:
-        await self._set_frozen(interaction, system, license_key, True)
+    @app_commands.describe(
+        compensate="Give the frozen time back to the key's expiry when it is unfrozen"
+    )
+    async def freeze(
+        self,
+        interaction: discord.Interaction,
+        system: str,
+        license_key: str,
+        compensate: bool = False,
+    ) -> None:
+        await self._set_frozen(interaction, system, license_key, True, compensate=compensate)
 
     @app_commands.command(name="unfreeze", description="Unfreeze a license key")
     @app_commands.autocomplete(system=system_autocomplete)
@@ -144,7 +153,13 @@ class KeysCog(commands.Cog):
         await self._set_frozen(interaction, system, license_key, False)
 
     async def _set_frozen(
-        self, interaction: discord.Interaction, system: str, license_key: str, frozen: bool
+        self,
+        interaction: discord.Interaction,
+        system: str,
+        license_key: str,
+        frozen: bool,
+        *,
+        compensate: bool = False,
     ) -> None:
         _, _, api, error = guards.resolve_command_target(
             self.bot, interaction, system, permissions.TIER_SUPPORT
@@ -153,8 +168,11 @@ class KeysCog(commands.Cog):
             return await interaction.response.send_message(embed=error, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        details = await api.set_frozen(license_key, frozen)
-        title = "🧊 Key frozen" if frozen else "🔓 Key unfrozen"
+        details = await api.set_frozen(license_key, frozen, compensate=compensate)
+        if frozen:
+            title = "🧊 Key frozen (compensated)" if compensate else "🧊 Key frozen"
+        else:
+            title = "🔓 Key unfrozen"
         embed = embeds.key_mutated(title, system, details)
         await interaction.followup.send(embed=embed, ephemeral=True)
         await self.bot.send_log(interaction, embed)

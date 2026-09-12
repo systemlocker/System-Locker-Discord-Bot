@@ -112,6 +112,9 @@ class KeyDetails:
     username: str | None
     hwid_is_set: bool
     frozen: bool
+    # "standard" or "compensated" while frozen, None while active; None also
+    # covers payloads from before the field existed, so check frozen first.
+    freeze_type: str | None
     free_trial: bool
     notes: str | None
     expires_at: datetime | None
@@ -503,10 +506,20 @@ class ManagementApi:
     async def get_key(self, license_key: str) -> KeyDetails:
         return self._key_details(await self._request("GET", self._key_path(license_key)))
 
-    async def set_frozen(self, license_key: str, frozen: bool) -> KeyDetails:
-        data = await self._request(
-            "PATCH", self._key_path(license_key), json_body={"frozen": frozen}
-        )
+    async def set_frozen(self, license_key: str, frozen: bool, *, compensate: bool = False) -> KeyDetails:
+        """Freeze or unfreeze a key.
+
+        With ``compensate`` (freezing only), the server returns the elapsed
+        frozen time to a redeemed key's fixed expiry when the freeze later
+        changes to any other state. Unredeemed keys have no running expiry,
+        so the server silently applies an ordinary freeze there instead.
+        """
+        if compensate and not frozen:
+            raise ValueError("compensate can only be used while freezing a key.")
+        body: dict[str, Any] = {"frozen": frozen}
+        if compensate:
+            body["compensate"] = True
+        data = await self._request("PATCH", self._key_path(license_key), json_body=body)
         return self._key_details(data)
 
     async def reset_hwid(self, license_key: str) -> KeyDetails:
@@ -729,6 +742,7 @@ class ManagementApi:
             username=data.get("username"),
             hwid_is_set=bool(data.get("hwid_is_set")),
             frozen=bool(data.get("frozen")),
+            freeze_type=data.get("freeze_type"),
             free_trial=bool(data.get("free_trial")),
             notes=data.get("notes"),
             expires_at=parse_timestamp(data.get("expires_at")),

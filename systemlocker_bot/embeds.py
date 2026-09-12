@@ -26,6 +26,16 @@ FOOTER_TEXT = "System Locker"
 _YES_NO = {True: "Yes", False: "No"}
 _CHECK_CROSS = {True: "✅", False: "❌"}
 
+# freeze_type values beyond these two (or a missing field on an older API)
+# still render as a plain check, keyed off the frozen boolean.
+_FREEZE_LABELS = {"standard": "✅ Standard", "compensated": "✅ Compensated"}
+
+
+def _freeze_label(key: KeyDetails) -> str:
+    if not key.frozen:
+        return "❌"
+    return _FREEZE_LABELS.get(key.freeze_type or "", "✅")
+
 
 def base(title: str, color: discord.Color, system: str | None = None) -> discord.Embed:
     embed = discord.Embed(title=title, color=color, timestamp=fmt.utc_now())
@@ -151,7 +161,7 @@ def key_details(system_name: str, key: KeyDetails) -> discord.Embed:
     embed.add_field(name="Claim", value=key.claim_type or "—", inline=True)
     embed.add_field(name="Username", value=key.username or "—", inline=True)
     embed.add_field(name="HWID set", value=_YES_NO[key.hwid_is_set], inline=True)
-    embed.add_field(name="Frozen", value=_CHECK_CROSS[key.frozen], inline=True)
+    embed.add_field(name="Frozen", value=_freeze_label(key), inline=True)
     embed.add_field(name="Free trial", value=_YES_NO[key.free_trial], inline=True)
     embed.add_field(name="Expires", value=fmt.timestamp_line(key.expires_at), inline=False)
     embed.add_field(name="Created", value=fmt.discord_timestamp(key.created_at), inline=True)
@@ -165,7 +175,7 @@ def key_mutated(title: str, system_name: str, key: KeyDetails) -> discord.Embed:
     embed = base(title, discord.Color.green(), system_name)
     embed.add_field(name="License key", value=f"`{key.license_key}`", inline=True)
     embed.add_field(name="HWID set", value=_YES_NO[key.hwid_is_set], inline=True)
-    embed.add_field(name="Frozen", value=_CHECK_CROSS[key.frozen], inline=True)
+    embed.add_field(name="Frozen", value=_freeze_label(key), inline=True)
     embed.add_field(name="Expires", value=fmt.timestamp_line(key.expires_at), inline=False)
     return embed
 
