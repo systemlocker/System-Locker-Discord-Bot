@@ -54,6 +54,8 @@ class KeysCog(commands.Cog):
         expires_at="Fixed expiry date, YYYY-MM-DD [HH:MM] UTC (expiry = at date)",
         notes="Optional note stored with the keys",
         free_trial="Mark the generated keys as free trials",
+        format="Optional custom key format; requires a plan with custom formats",
+        reseller="Optional reseller token to assign the generated keys to",
     )
     @app_commands.choices(
         expiry=[
@@ -72,6 +74,8 @@ class KeysCog(commands.Cog):
         expires_at: str = "",
         notes: str = "",
         free_trial: bool = False,
+        format: app_commands.Range[str, 1, 64] | None = None,
+        reseller: str | None = None,
     ) -> None:
         _, _, api, error = guards.resolve_command_target(
             self.bot, interaction, system, permissions.TIER_GENERATE
@@ -92,6 +96,8 @@ class KeysCog(commands.Cog):
             expiry=expiry_object,
             notes=notes.strip() or None,
             free_trial=free_trial,
+            format=format,
+            reseller=reseller,
         )
 
         embed = embeds.keys_generated(
@@ -101,8 +107,11 @@ class KeysCog(commands.Cog):
             notes=notes,
             free_trial=free_trial,
             requested_by=interaction.user,
+            key_format=format,
+            reseller=reseller,
         )
-        if len(keys) > 10:
+        # Long custom keys can exceed an embed field even in a small batch.
+        if len(keys) > 10 or sum(len(key) + 3 for key in keys) > 900:
             file = discord.File(
                 io.BytesIO("\n".join(keys).encode("utf-8")), filename=f"{system}-keys.txt"
             )
@@ -133,7 +142,7 @@ class KeysCog(commands.Cog):
 
     # --------------------------------------------------------- /freeze variants
 
-    @app_commands.command(name="freeze", description="Freeze a license key (blocks authentication)")
+    @app_commands.command(name="freeze", description="Freeze a license key (blocks online authentication)")
     @app_commands.autocomplete(system=system_autocomplete)
     @app_commands.describe(
         compensate="Give the frozen time back to the key's expiry when it is unfrozen"

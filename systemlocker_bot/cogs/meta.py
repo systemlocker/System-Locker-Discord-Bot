@@ -16,25 +16,30 @@ _COMMANDS = {
         ("/stats system", "Online and total user counts"),
         ("/systems", "List the systems configured for this server"),
         ("/reset system license_key", "Reset the HWID claimed by one key"),
-        ("/freeze system license_key", "Freeze a key (blocks authentication)"),
+        ("/freeze system license_key", "Freeze a key (blocks online authentication)"),
         ("/unfreeze system license_key", "Unfreeze a key"),
+        ("/nightflyer policy system", "Read the offline authorization policy"),
+        ("/nightflyer leases system [license_key] [page]", "Inspect offline leases and devices"),
     ),
     permissions.TIER_GENERATE: (
-        ("/gen system [count] [expiry] …", "Generate 1-100 license keys"),
+        ("/gen system [count] [expiry] …", "Generate 1-100 keys; optional format and reseller"),
     ),
     permissions.TIER_MANAGE: (
         ("/addtime system license_key duration", "Add time to a key, e.g. 7d or 12h30m"),
         ("/deletekey system license_key", "Permanently delete a key (asks to confirm)"),
         ("/resetall system", "Reset the HWID of every key (asks to confirm)"),
-        ("/pause system", "Pause authentication (asks to confirm)"),
+        ("/pause system", "Pause online authentication (asks to confirm)"),
         ("/resume system [compensate]", "Resume a paused system"),
-        ("/variable get|create|update|delete", "Manage server-side variables"),
+        ("/variable get|create|update|delete", "Manage server-side variables; update can rename"),
         ("/reseller list|show system", "List resellers or show one reseller"),
         (
             "/reseller create|permissions|allowance|reset-password|delete",
             "Create resellers, manage permissions and allowances",
         ),
         ("/iplookup system ip", "Aegis IP lookup"),
+        ("/permissions system", "Show the credential's granted scopes"),
+        ("/nightflyer update system [enabled] [max_offline]", "Change offline policy (asks to confirm)"),
+        ("/nightflyer unbind system license_key [authorization_id]", "Revoke offline leases (asks to confirm)"),
     ),
 }
 
@@ -57,10 +62,23 @@ class MetaCog(commands.Cog):
             "includes both. Server administrators and configured admin users always "
             "act at **manage**. Role assignment is configured in the bot's config file."
         )
+        trial = guild.individual_free_trial
+        if trial is not None and trial.enable and trial.mode == "command":
+            embed.add_field(
+                name="Community trials", value="`/trial` — Request your free trial key by DM",
+                inline=False,
+            )
         for tier in (permissions.TIER_SUPPORT, permissions.TIER_GENERATE, permissions.TIER_MANAGE):
             name = permissions.TIER_NAMES[tier]
-            body = "\n".join(f"`{command}` — {description}" for command, description in _COMMANDS[tier])
-            embed.add_field(name=f"{name} tier", value=body[:1024], inline=False)
+            body = ""
+            for command, description in _COMMANDS[tier]:
+                line = f"`{command}` — {description}"
+                if body and len(body) + len(line) + 1 > 1024:
+                    embed.add_field(name=f"{name} tier", value=body, inline=False)
+                    body = ""
+                body = f"{body}\n{line}" if body else line
+            if body:
+                embed.add_field(name=f"{name} tier", value=body, inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

@@ -61,7 +61,8 @@ class VariablesCog(commands.Cog):
     @variable.command(name="update", description="Update a variable's value")
     @app_commands.autocomplete(system=system_autocomplete)
     @app_commands.describe(
-        name="The existing variable", value="The new value", protected="Change the protected flag"
+        name="The existing variable", value="The new value", protected="Change the protected flag",
+        new_name="Optionally rename the variable; update clients that use its old name",
     )
     async def variable_update(
         self,
@@ -70,6 +71,7 @@ class VariablesCog(commands.Cog):
         name: str,
         value: str,
         protected: Optional[bool] = None,
+        new_name: app_commands.Range[str, 1, 40] | None = None,
     ) -> None:
         _, _, api, error = guards.resolve_command_target(
             self.bot, interaction, system, permissions.TIER_MANAGE
@@ -78,8 +80,13 @@ class VariablesCog(commands.Cog):
             return await interaction.response.send_message(embed=error, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        item = await api.update_variable(name.strip(), value, protected=protected)
+        item = await api.update_variable(
+            name.strip(), value, protected=protected,
+            new_name=new_name.strip() if new_name is not None else None,
+        )
         embed = embeds.variable(system, item)
+        if new_name is not None:
+            embed.add_field(name="Previous name", value=name.strip(), inline=False)
         await interaction.followup.send(embed=embed, ephemeral=True)
         await self.bot.send_log(interaction, embed)
 

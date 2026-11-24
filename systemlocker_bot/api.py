@@ -327,6 +327,7 @@ class AiohttpTransport:
                 params=params,
                 json=json_body,
                 timeout=self._timeout,
+                allow_redirects=False,
             ) as response:
                 return TransportResponse(response.status, response.headers, await response.text())
         except asyncio.CancelledError:
@@ -421,6 +422,87 @@ class ManagementApi:
     def system_id(self) -> str:
         return self._system_id
 
+    async def permissions(self) -> list[str]:
+        """Discover this credential's grants; this endpoint requires no scope."""
+        data = await self._request("GET", "/permissions")
+        scopes = data.get("scopes") if isinstance(data, dict) else None
+        if not isinstance(scopes, list) or any(not isinstance(scope, str) for scope in scopes):
+            raise ApiTransportError("The API returned invalid credential scopes.")
+        return scopes
+
+    async def get_nightflyer_policy(self) -> dict[str, Any]:
+        return await self._request("GET", f"{self._system_path()}/nightflyer")
+
+    async def update_nightflyer_policy(
+        self, *, enabled: bool | None = None, max_offline: int | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if enabled is not None:
+            if type(enabled) is not bool:
+                raise ValueError("enabled must be a boolean.")
+            body["enabled"] = enabled
+        if max_offline is not None:
+            if type(max_offline) is not int or not 1200 <= max_offline <= 7_776_000:
+                raise ValueError("max_offline must be between 1200 and 7776000 seconds.")
+            body["max_offline"] = max_offline
+        if not body:
+            raise ValueError("provide enabled or max_offline.")
+        return await self._request("PATCH", f"{self._system_path()}/nightflyer", json_body=body)
+
+    async def nightflyer_leases(
+        self, license_key: str | None = None, *, limit: int = 100, page: int = 1,
+    ) -> list[dict[str, Any]]:
+        if type(limit) is not int or not 1 <= limit <= 500 or type(page) is not int or not 1 <= page <= 10_000:
+            raise ValueError("limit must be 1-500 and page must be 1-10000.")
+        params = {"limit": str(limit), "page": str(page)}
+        if license_key is not None:
+            params["license_key"] = license_key
+        return _as_list(await self._request("GET", f"{self._system_path()}/nightflyer/leases", params=params))
+
+    async def unbind_nightflyer_lease(
+        self, license_key: str, authorization_id: str, *, reason: str = "developer_unbound",
+    ) -> dict[str, Any]:
+        if len(reason.encode("utf-8")) > 255:
+            raise ValueError("reason must be at most 255 bytes.")
+        path = f"{self._key_path(license_key)}/nightflyer/{quote(authorization_id, safe='')}/unbind"
+        return await self._request("POST", path, json_body={"reason": reason})
+
+    async def unbind_all_nightflyer_leases(
+        self, license_key: str, *, reason: str = "developer_unbound_all",
+    ) -> int:
+        if len(reason.encode("utf-8")) > 255:
+            raise ValueError("reason must be at most 255 bytes.")
+        data = await self._request(
+            "POST", f"{self._key_path(license_key)}/nightflyer/unbind-all", json_body={"reason": reason},
+        )
+        return int(data["unbound"])
+
+    async def create_user(
+        self, username: str, email: str, password: str, license_keys: list[str],
+    ) -> dict[str, Any]:
+        """Register an account and send verification mail (users.manage).
+
+        Registration claims 1–100 license keys. Keep account passwords out of
+        slash-command options and audit logs. Per-key outcomes are returned
+        even when an individual key cannot be attached.
+        """
+        _require_license_keys(license_keys)
+        return await self._request("POST", f"{self._system_path()}/users", json_body={
+            "username": username, "email": email, "password": password,
+            "license_keys": list(license_keys),
+        })
+
+    async def add_user_keys(self, username: str, password: str, license_keys: list[str]) -> dict[str, Any]:
+        """Attach 1–100 keys using the account password; returns each key's outcome."""
+        _require_license_keys(license_keys)
+        data = await self._request("POST", f"{self._system_path()}/users/keys", json_body={
+            "username": username, "password": password, "license_keys": list(license_keys),
+        })
+        outcomes = data.get("license_keys") if isinstance(data, dict) else None
+        if not isinstance(outcomes, dict):
+            raise ApiTransportError("The API returned invalid key outcomes.")
+        return outcomes
+
     # ------------------------------------------------------------------ systems
 
     async def list_systems(self) -> list[SystemDetails]:
@@ -429,6 +511,26 @@ class ManagementApi:
 
     async def get_system(self) -> SystemDetails:
         return self._system_details(await self._request("GET", self._system_path()))
+
+    async def update_system(
+        self, *, version: str | None = None, program_hash: str | None = None,
+        clear_program_hash: bool = False,
+    ) -> SystemDetails:
+        """Update release metadata, preserving fields that were not supplied.
+
+        Clearing the hash is explicit so a version-only update cannot remove
+        an existing integrity check. The API enforces plan and scope rules.
+        """
+        if clear_program_hash and program_hash is not None:
+            raise ValueError("provide program_hash or clear_program_hash, not both.")
+        body: dict[str, Any] = {}
+        if version is not None:
+            body["version"] = version
+        if clear_program_hash or program_hash is not None:
+            body["program_hash"] = None if clear_program_hash else program_hash
+        if not body:
+            raise ValueError("provide version, program_hash, or clear_program_hash.")
+        return self._system_details(await self._request("PATCH", self._system_path(), json_body=body))
 
     async def get_statistics(self) -> SystemStatistics:
         data = await self._request("GET", f"{self._system_path()}/statistics")
@@ -455,14 +557,19 @@ class ManagementApi:
         expiry: Expiry | None = None,
         notes: str | None = None,
         free_trial: bool = False,
+        format: str | None = None,
+        reseller: str | None = None,
     ) -> list[str]:
-        if not 1 <= count <= 100:
+        if type(count) is not int or not 1 <= count <= 100:
             raise ValueError("count must be between 1 and 100.")
         body: dict[str, Any] = {"count": count}
         body["expiry"] = (expiry or Perpetual()).to_body()
         if notes is not None:
             body["notes"] = notes
         body["free_trial"] = free_trial
+        for field, value in (("format", format), ("reseller", reseller)):
+            if value is not None:
+                body[field] = value
         data = await self._request("POST", f"{self._system_path()}/keys", json_body=body)
         keys = _as_list(data.get("keys")) if isinstance(data, dict) else _as_list(data)
         return [str(key) for key in keys]
@@ -496,12 +603,35 @@ class ManagementApi:
         identifier = identifier.strip()
         if not identifier:
             raise ValueError("identifier must not be empty.")
+        if len(identifier) > 256:
+            raise ValueError("identifier cannot exceed 256 characters.")
         data = await self._request(
             "GET",
             f"{self._system_path()}/individual-free-trials/identifier-availability",
             params={"identifier": identifier},
         )
-        return bool(data.get("available")) if isinstance(data, Mapping) else False
+        if not isinstance(data, dict) or type(data.get("available")) is not bool:
+            raise ApiTransportError("The API returned invalid trial identifier availability.")
+        return data["available"]
+
+    async def set_individual_free_trial_identifier(
+        self, license_key: str, identifier: str | None,
+    ) -> str | None:
+        """Assign or clear an individual trial identifier (individual_free_trial).
+
+        This stays outside Discord commands: automated trials always bind to
+        the requesting member's ID, preserving the one-trial-per-member rule.
+        """
+        if identifier is not None:
+            identifier = identifier.strip() or None
+        if identifier is not None and len(identifier) > 256:
+            raise ValueError("identifier cannot exceed 256 characters.")
+        data = await self._request(
+            "PATCH",
+            f"{self._system_path()}/individual-free-trials/{quote(license_key, safe='')}",
+            json_body={"identifier": identifier},
+        )
+        return data["identifier"]
 
     async def get_key(self, license_key: str) -> KeyDetails:
         return self._key_details(await self._request("GET", self._key_path(license_key)))
@@ -516,7 +646,7 @@ class ManagementApi:
         """
         if compensate and not frozen:
             raise ValueError("compensate can only be used while freezing a key.")
-        body: dict[str, Any] = {"frozen": frozen}
+        body: dict[str, Any] = {"paused": frozen}
         if compensate:
             body["compensate"] = True
         data = await self._request("PATCH", self._key_path(license_key), json_body=body)
@@ -569,9 +699,12 @@ class ManagementApi:
         )
 
     async def update_variable(
-        self, name: str, value: str, *, protected: bool | None = None
+        self, name: str, value: str, *, protected: bool | None = None,
+        new_name: str | None = None,
     ) -> Variable:
         body: dict[str, Any] = {"value": value}
+        if new_name is not None:
+            body["name"] = new_name
         if protected is not None:
             body["protected"] = protected
         return self._variable(
@@ -700,7 +833,9 @@ class ManagementApi:
             raise _api_error(response.status, None if malformed else body)
         if malformed:
             raise ApiTransportError("The API returned a non-JSON response body.")
-        return body.get("data", body) if isinstance(body, dict) else body
+        if not isinstance(body, dict) or "data" not in body:
+            raise ApiTransportError("The API returned an invalid response envelope.")
+        return body["data"]
 
     async def _attempt(
         self,
@@ -711,6 +846,10 @@ class ManagementApi:
         json_body: Any | None,
     ) -> TransportResponse:
         await self._limiter.acquire()
+        # V2 requires JSON Content-Type even for fieldless mutations. aiohttp
+        # adds it when json={} is supplied; json=None sends no JSON body.
+        if json_body is None and method in {"POST", "PUT", "PATCH"}:
+            json_body = {}
         return await self._transport.request(
             method, url, headers=self._headers, params=params, json_body=json_body
         )
@@ -741,8 +880,10 @@ class ManagementApi:
             claim_type=data.get("claim_type"),
             username=data.get("username"),
             hwid_is_set=bool(data.get("hwid_is_set")),
-            frozen=bool(data.get("frozen")),
-            freeze_type=data.get("freeze_type"),
+            # Current names take precedence, including explicit False/None;
+            # retain the aliases for responses from older server versions.
+            frozen=bool(data.get("paused", data.get("frozen"))),
+            freeze_type=data.get("pause_type", data.get("freeze_type")),
             free_trial=bool(data.get("free_trial")),
             notes=data.get("notes"),
             expires_at=parse_timestamp(data.get("expires_at")),
@@ -798,6 +939,15 @@ def _retry_after_seconds(headers: Mapping[str, str]) -> float:
             except ValueError:
                 break
     return 5.0
+
+
+def _require_license_keys(license_keys: Any) -> None:
+    # The server rejects an empty list and more than 100 keys; checking here
+    # avoids spending a rate-limited request on a guaranteed failure.
+    if isinstance(license_keys, str) or not isinstance(license_keys, (list, tuple)) \
+            or not 1 <= len(license_keys) <= 100 \
+            or any(not isinstance(key, str) or not key.strip() for key in license_keys):
+        raise ValueError("license_keys must be a list of 1-100 non-empty keys.")
 
 
 def _as_list(data: Any) -> list[Any]:

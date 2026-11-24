@@ -60,7 +60,7 @@ class SystemsCog(commands.Cog):
         embed.description = "\n".join(lines)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="pause", description="Pause authentication and end active sessions")
+    @app_commands.command(name="pause", description="Pause online authentication and end online sessions")
     @app_commands.autocomplete(system=system_autocomplete)
     async def pause(self, interaction: discord.Interaction, system: str) -> None:
         _, _, api, error = guards.resolve_command_target(
@@ -72,8 +72,8 @@ class SystemsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         prompt = embeds.base("⏸️ Pause this system?", discord.Color.orange(), system)
         prompt.description = (
-            f"Pausing **{system}** blocks all authentication and ends every active session. "
-            "It can be reversed with /resume."
+            f"Pausing **{system}** blocks online authentication and ends online sessions. "
+            "It can be reversed with /resume.\n\n" + embeds.NIGHTFLYER_OFFLINE_NOTICE
         )
         view = ConfirmView(interaction.user.id)
         message = await interaction.followup.send(embed=prompt, view=view, ephemeral=True)

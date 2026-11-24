@@ -34,15 +34,22 @@ paste them into chat, never embed them in copies of this bot you distribute.
 - It offers no raw "run any API call" passthrough; only the documented
   commands exist.
 - Destructive actions (`/deletekey`, `/resetall`, `/pause`,
-  `/reseller delete`) require an explicit confirmation click from the
-  invoking staff member.
+  `/reseller delete`, `/nightflyer unbind`) and Nightflyer policy updates
+  require an explicit confirmation click from the invoking staff member.
+- Account registration and key-attachment helpers are available in the API
+  client, but no slash command accepts a customer's account password.
+- Offline Nightflyer devices receive revocation and policy changes when
+  they reconnect; an existing offline lease can remain usable until expiry.
 
 ## Access control
 
-Permission checks are role-based per server, evaluated on every
+Staff-command permission checks are role-based per server, evaluated on every
 interaction: members need a role listed under the command's tier (or the
-Discord Administrator permission, or listing in `admins`). All responses
-are ephemeral, so key material is never left visible in a public channel.
+Discord Administrator permission, or listing in `admins`). Staff replies
+are ephemeral; mutations are also sent to the configured staff log channel.
+Opt-in individual trial keys are delivered only by DM to the requesting
+member and are never mirrored to the log channel. Their identifier is always
+the member's Discord ID, limiting each account to one trial per system.
 Autocomplete and error messages reveal only the system names you configured.
 
 ## Sensitive data the bot produces

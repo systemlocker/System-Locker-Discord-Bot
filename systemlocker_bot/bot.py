@@ -24,6 +24,7 @@ EXTENSIONS = (
     "systemlocker_bot.cogs.variables",
     "systemlocker_bot.cogs.resellers",
     "systemlocker_bot.cogs.security",
+    "systemlocker_bot.cogs.nightflyer",
     "systemlocker_bot.cogs.meta",
 )
 
